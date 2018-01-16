@@ -1,17 +1,22 @@
 package geolab.ge.locationsdemo;
 
 import android.annotation.SuppressLint;
+import android.app.PendingIntent;
+import android.content.Intent;
+import android.graphics.Color;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.Geofence;
+import com.google.android.gms.location.GeofencingClient;
 import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationAvailability;
 import com.google.android.gms.location.LocationCallback;
@@ -22,8 +27,10 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 
 import java.io.IOException;
@@ -35,12 +42,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     TextView textView;
     TextView addressTextView;
     private GoogleMap mMap;
+    private GeofencingClient mGeofencingClient;
+    private GeofencingRequest request;
 
     @SuppressLint("MissingPermission")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        mGeofencingClient = LocationServices.getGeofencingClient(this);
 
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
@@ -68,26 +79,49 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             Geofence geofence = new Geofence.Builder()
                                     .setRequestId("geolab") // Geofence ID
                                     .setCircularRegion( location.getLatitude(), location.getLongitude(), 100) // defining fence region
-                                    .setExpirationDuration( 2000 ) // expiring date
+                                    .setExpirationDuration( 10000 ) // expiring date
                                     .setTransitionTypes( Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT )
                                     .build();
 
-                            GeofencingRequest request = new GeofencingRequest.Builder()
+                            request = new GeofencingRequest.Builder()
                                     // Notification to trigger when the Geofence is created
                                     .setInitialTrigger( GeofencingRequest.INITIAL_TRIGGER_ENTER )
                                     .addGeofence( geofence ) // add a Geofence
                                     .build();
+
+                            mGeofencingClient.addGeofences(request,getGeofencePendingIntent())
+                                    .addOnSuccessListener(MainActivity.this, new OnSuccessListener<Void>() {
+                                        @Override
+                                        public void onSuccess(Void aVoid) {
+                                            Toast.makeText(MainActivity.this, "added success", Toast.LENGTH_SHORT).show();
+                                        }
+                                    })
+                                    .addOnFailureListener(MainActivity.this, new OnFailureListener() {
+                                        @Override
+                                        public void onFailure(@NonNull Exception e) {
+                                            Toast.makeText(MainActivity.this, "failure", Toast.LENGTH_SHORT).show();
+                                        }
+                                    });
                         }
                     }
                 });
     }
 
+    private PendingIntent mGeofencePendingIntent;
+    private PendingIntent getGeofencePendingIntent(){
+        if (mGeofencePendingIntent != null){
+            return mGeofencePendingIntent;
+        }
+        Intent intent = new Intent(this, GeofenceTransitionsIntentService.class);
+        mGeofencePendingIntent = PendingIntent.getService(this,0,intent,PendingIntent.FLAG_UPDATE_CURRENT);
+        return mGeofencePendingIntent;
+    }
 
     @SuppressLint("MissingPermission")
     private void requestLocationUpdates() {
         final LocationRequest locationRequest = new LocationRequest();
-        locationRequest.setInterval(10000);
-        locationRequest.setFastestInterval(5000);
+        locationRequest.setInterval(100000);
+        locationRequest.setFastestInterval(50000);
         mFusedLocationClient.requestLocationUpdates(locationRequest, new LocationCallback() {
             @Override
             public void onLocationResult(LocationResult locationResult) {
@@ -110,7 +144,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void addMarker(LatLng location){
+        CircleOptions circleOptions = new CircleOptions()
+                .center( new LatLng(location.latitude, location.longitude) )
+                .radius(100)
+                .fillColor(0x40ff0000)
+                .strokeColor(Color.TRANSPARENT)
+                .strokeWidth(2);
         mMap.addMarker(new MarkerOptions().position(location).title("Marker in Sydney"));
+        mMap.addCircle(circleOptions);
         mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 16));
     }
 
